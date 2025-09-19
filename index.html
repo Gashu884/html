@@ -74,7 +74,7 @@
 
   <script>
     const el = id => document.getElementById(id);
-    const urlJoin = (a,b) => a.replace(/\\/$/'') + (b.startsWith('/')?'':'/') + b;
+    const urlJoin = (a,b) => a.replace(/\/$/,'') + (b.startsWith('/')?'':'/') + b;
 
     function prettyJSON(x, pretty) {
       try {
