@@ -6,23 +6,18 @@
   <title>API レスポンス / 画像表示</title>
   <style>
     :root { color-scheme: light dark; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; margin: 0; padding: 24px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 0; padding: 24px; }
     .container { max-width: 960px; margin: 0 auto; }
     h1 { font-size: 1.5rem; margin: 0 0 16px; }
-    .card { border: 1px solid rgba(0,0,0,.1); border-radius: 12px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.06); background: rgba(255,255,255,.6); backdrop-filter: blur(6px); }
+    .card { border: 1px solid rgba(0,0,0,.1); border-radius: 12px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     input[type="url"] { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); font-size: 16px; min-width: 260px; }
     button { padding: 10px 14px; border: none; border-radius: 10px; background: #1a73e8; color: #fff; font-weight: 600; cursor: pointer; }
     button.secondary { background: #5f6368; }
-    button:disabled { opacity: .6; cursor: not-allowed; }
-    .meta { display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; margin-top: 12px; }
-    .meta div { padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,.04); }
     pre { white-space: pre-wrap; word-break: break-word; background: #0b1020; color: #e8eaf3; padding: 14px; border-radius: 10px; overflow: auto; font-size: 14px; }
     .muted { opacity: .7; }
-    .footer { margin-top: 16px; font-size: 12px; opacity: .7; }
     .preview { margin-top: 12px; display: none; }
     .preview img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid rgba(0,0,0,.1); }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -30,31 +25,21 @@
     <h1>API レスポンス / 画像表示</h1>
     <div class="card">
       <div class="row" style="margin-bottom:10px;">
-        <input id="url" type="url" placeholder="http(s)://…" value="http://10.32.17.80:8100/hello" />
+        <input id="url" type="url" value="http://10.32.17.80:8100/hello" />
         <button id="fetchBtn">Fetch</button>
-        <button id="copyBtn" title="レスポンスをコピー" class="secondary">Copy</button>
       </div>
 
       <div class="row" style="gap:12px; margin-bottom: 8px;">
-        <label class="muted"><input id="pretty" type="checkbox" checked> 整形表示（pretty print）</label>
-        <label class="muted"><input id="includeHeaders" type="checkbox" checked> レスポンスヘッダも表示</label>
+        <label class="muted"><input id="pretty" type="checkbox" checked> 整形表示</label>
       </div>
 
-      <div class="meta">
-        <div class="muted">HTTP ステータス</div>
-        <div id="status">—</div>
-        <div class="muted">Content-Type</div>
-        <div id="ctype">—</div>
-        <div class="muted">所要時間</div>
-        <div id="elapsed">—</div>
-        <div class="muted">サイズ</div>
-        <div id="length">—</div>
-      </div>
+      <div><strong>HTTP ステータス:</strong> <span id="status">—</span></div>
+      <div><strong>Content-Type:</strong> <span id="ctype">—</span></div>
+      <div><strong>サイズ:</strong> <span id="length">—</span></div>
 
-      <div class="actions" style="margin-top:10px;">
-        <button id="showHello" class="secondary" title="/hello を表示">/hello</button>
-        <button id="showCell" class="secondary" title="/cell の画像を表示">/cell</button>
-        <a id="downloadLink" href="#" download style="display:none;"><button type="button">画像を保存</button></a>
+      <div class="row" style="margin-top:10px;">
+        <button id="showHello" class="secondary">/hello</button>
+        <button id="showCell" class="secondary">/cell</button>
       </div>
 
       <h3>Body</h3>
@@ -64,13 +49,6 @@
         <h3>Image Preview</h3>
         <img id="img" alt="image preview" />
       </div>
-
-      <div id="headersWrap" style="display:none;">
-        <h3>Headers</h3>
-        <pre id="headers"></pre>
-      </div>
-
-      <div class="footer">注意: 別オリジンにアクセスする場合、サーバー側で CORS 設定が必要です。`/cell` のように <code>Content-Disposition: attachment</code> が付与されていても、このツールは <code>fetch</code> + Blob 経由でプレビューできます。</div>
     </div>
   </div>
 
@@ -86,99 +64,50 @@
       } catch (e) { return String(obj); }
     }
 
-    function showHeaders(res) {
-      const headersObj = {};
-      res.headers.forEach((v, k) => headersObj[k] = v);
-      const show = el('includeHeaders').checked;
-      el('headersWrap').style.display = show ? 'block' : 'none';
-      if (show) el('headers').textContent = toPretty(headersObj, el('pretty').checked);
-    }
-
     async function fetchApi() {
       const url = el('url').value.trim();
       if (!url) return;
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s
-
-      el('fetchBtn').disabled = true;
       el('status').textContent = 'fetching…';
       el('ctype').textContent = '—';
-      el('elapsed').textContent = '—';
       el('length').textContent = '—';
       el('body').textContent = '';
       el('imgWrap').style.display = 'none';
       el('img').src = '';
-      el('downloadLink').style.display = 'none';
-      el('headers').textContent = '';
 
-      const t0 = performance.now();
       try {
-        const res = await fetch(url, { headers: { 'Accept': 'application/json, text/plain, */*' }, mode: 'cors', signal: controller.signal });
-        const t1 = performance.now();
-
+        const res = await fetch(url, { mode: 'cors' });
         el('status').textContent = `${res.status} ${res.statusText}`;
         const ctype = res.headers.get('content-type') || '';
-        el('ctype').textContent = ctype || '—';
-        el('elapsed').textContent = `${(t1 - t0).toFixed(0)} ms`;
+        el('ctype').textContent = ctype;
 
-        showHeaders(res);
-
-        if (ctype.toLowerCase().startsWith('image/')) {
-          // 画像は Blob として取得し、ObjectURL を <img> に表示
+        if (ctype.startsWith('image/')) {
           const blob = await res.blob();
           el('length').textContent = `${blob.size} bytes`;
           const objUrl = URL.createObjectURL(blob);
           el('img').src = objUrl;
           el('imgWrap').style.display = 'block';
           el('body').textContent = '（画像レスポンス）';
-          // ダウンロードリンク
-          const dl = el('downloadLink');
-          dl.href = objUrl;
-          // ファイル名をヘッダから取得（なければ URL 末尾）
-          const cd = res.headers.get('content-disposition') || '';
-          const m = /filename="?([^";]+)"?/i.exec(cd);
-          dl.download = m ? m[1] : (url.split('/').pop() || 'download');
-          dl.style.display = 'inline-block';
         } else if (ctype.includes('application/json')) {
           const data = await res.json();
           const txt = toPretty(data, el('pretty').checked);
           el('length').textContent = new Blob([txt]).size + ' bytes';
-          el('body').textContent = txt || '（空）';
+          el('body').textContent = txt;
         } else {
           const text = await res.text();
           el('length').textContent = new Blob([text]).size + ' bytes';
-          el('body').textContent = text || '（空）';
+          el('body').textContent = text;
         }
       } catch (err) {
-        el('status').textContent = (err.name === 'AbortError') ? 'Timeout' : 'Error';
+        el('status').textContent = 'Error';
         el('body').textContent = String(err);
-      } finally {
-        clearTimeout(timeoutId);
-        el('fetchBtn').disabled = false;
       }
     }
 
     el('fetchBtn').addEventListener('click', fetchApi);
-    el('includeHeaders').addEventListener('change', () => {
-      el('headersWrap').style.display = el('includeHeaders').checked ? 'block' : 'none';
-    });
-    el('copyBtn').addEventListener('click', async () => {
-      const text = `Status: ${el('status').textContent}
-Content-Type: ${el('ctype').textContent}
-Time: ${el('elapsed').textContent}
-Size: ${el('length').textContent}
-
-Body:
-${el('body').textContent}`;
-      try { await navigator.clipboard.writeText(text); el('copyBtn').textContent = 'Copied!'; setTimeout(() => el('copyBtn').textContent = 'Copy', 1200); } catch {}
-    });
-
-    // クイックボタン
     el('showHello').addEventListener('click', () => { el('url').value = 'http://10.32.17.80:8100/hello'; fetchApi(); });
     el('showCell').addEventListener('click', () => { el('url').value = 'http://10.32.17.80:8100/cell'; fetchApi(); });
 
-    // 初回自動フェッチ（/hello）
     window.addEventListener('DOMContentLoaded', () => fetchApi());
   </script>
 </body>
