@@ -11,35 +11,50 @@
     h1 { font-size: 1.5rem; margin: 0 0 16px; }
     .card { border: 1px solid rgba(0,0,0,.1); border-radius: 12px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    input[type="url"] { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); font-size: 16px; min-width: 260px; }
+    input[type="url"], input[type="text"] { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); font-size: 16px; min-width: 240px; }
+    select { padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); font-size: 16px; }
     button { padding: 10px 14px; border: none; border-radius: 10px; background: #1a73e8; color: #fff; font-weight: 600; cursor: pointer; }
     button.secondary { background: #5f6368; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
     pre { white-space: pre-wrap; word-break: break-word; background: #0b1020; color: #e8eaf3; padding: 14px; border-radius: 10px; overflow: auto; font-size: 14px; }
     .muted { opacity: .7; }
+    .grid { display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; margin-top: 10px; }
+    .grid > div { background: rgba(0,0,0,.04); padding: 6px 10px; border-radius: 8px; }
     .preview { margin-top: 12px; display: none; }
     .preview img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid rgba(0,0,0,.1); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>API レスポンス / 画像表示</h1>
+
     <div class="card">
       <div class="row" style="margin-bottom:10px;">
-        <input id="url" type="url" value="http://10.32.17.80:8100/hello" />
+        <input id="base" type="url" value="http://10.32.17.80:8100" placeholder="https://api.example.com" />
+        <select id="path">
+          <option value="/hello">/hello (JSON)</option>
+          <option value="/cell">/cell (PNG)</option>
+        </select>
         <button id="fetchBtn">Fetch</button>
       </div>
 
       <div class="row" style="gap:12px; margin-bottom: 8px;">
-        <label class="muted"><input id="pretty" type="checkbox" checked> 整形表示</label>
+        <label class="muted"><input id="pretty" type="checkbox" checked> JSONを整形表示</label>
+        <label class="muted"><input id="showHeaders" type="checkbox"> レスポンスヘッダも表示</label>
       </div>
 
-      <div><strong>HTTP ステータス:</strong> <span id="status">—</span></div>
-      <div><strong>Content-Type:</strong> <span id="ctype">—</span></div>
-      <div><strong>サイズ:</strong> <span id="length">—</span></div>
+      <div class="grid">
+        <div class="muted">HTTP ステータス</div><div id="status">—</div>
+        <div class="muted">Content-Type</div><div id="ctype">—</div>
+        <div class="muted">サイズ</div><div id="length">—</div>
+        <div class="muted">所要時間</div><div id="elapsed">—</div>
+      </div>
 
-      <div class="row" style="margin-top:10px;">
-        <button id="showHello" class="secondary">/hello</button>
-        <button id="showCell" class="secondary">/cell</button>
+      <div class="actions">
+        <button class="secondary" id="btnHello">/hello</button>
+        <button class="secondary" id="btnCell">/cell</button>
+        <a id="download" href="#" download style="display:none;"><button type="button">画像を保存</button></a>
       </div>
 
       <h3>Body</h3>
@@ -49,66 +64,102 @@
         <h3>Image Preview</h3>
         <img id="img" alt="image preview" />
       </div>
+
+      <div id="headersWrap" style="display:none;">
+        <h3>Headers</h3>
+        <pre id="headers"></pre>
+      </div>
     </div>
   </div>
 
   <script>
-    const el = (id) => document.getElementById(id);
+    const el = id => document.getElementById(id);
+    const urlJoin = (a,b) => a.replace(/\\/$/,'') + (b.startsWith('/')?'':'/') + b;
 
-    function toPretty(obj, pretty = true) {
+    function prettyJSON(x, pretty) {
       try {
-        if (typeof obj === 'string') {
-          try { return pretty ? JSON.stringify(JSON.parse(obj), null, 2) : obj; } catch { return obj; }
-        }
-        return pretty ? JSON.stringify(obj, null, 2) : JSON.stringify(obj);
-      } catch (e) { return String(obj); }
+        if (typeof x === 'string') { try { return pretty ? JSON.stringify(JSON.parse(x), null, 2) : x; } catch { return x; } }
+        return pretty ? JSON.stringify(x, null, 2) : JSON.stringify(x);
+      } catch { return String(x); }
+    }
+
+    function toggleHeaders(on) {
+      el('headersWrap').style.display = on ? 'block' : 'none';
     }
 
     async function fetchApi() {
-      const url = el('url').value.trim();
-      if (!url) return;
+      const base = el('base').value.trim();
+      const path = el('path').value;
+      const url = urlJoin(base, path);
+      if (!base) return;
 
+      // reset UI
       el('status').textContent = 'fetching…';
       el('ctype').textContent = '—';
       el('length').textContent = '—';
+      el('elapsed').textContent = '—';
       el('body').textContent = '';
       el('imgWrap').style.display = 'none';
       el('img').src = '';
+      el('download').style.display = 'none';
+      toggleHeaders(el('showHeaders').checked);
+      el('headers').textContent = '';
 
+      const t0 = performance.now();
       try {
-        const res = await fetch(url, { mode: 'cors' });
-        el('status').textContent = `${res.status} ${res.statusText}`;
-        const ctype = res.headers.get('content-type') || '';
-        el('ctype').textContent = ctype;
+        const res = await fetch(url, { headers: { 'Accept': 'application/json, text/plain, */*' }, mode: 'cors' });
+        const t1 = performance.now();
+
+        el('status').textContent = res.status + ' ' + res.statusText;
+        const ctype = (res.headers.get('content-type') || '').toLowerCase();
+        el('ctype').textContent = ctype || '—';
+        el('elapsed').textContent = (t1 - t0).toFixed(0) + ' ms';
+
+        if (el('showHeaders').checked) {
+          const h = {};
+          res.headers.forEach((v,k)=>h[k]=v);
+          el('headers').textContent = prettyJSON(h, true);
+        }
 
         if (ctype.startsWith('image/')) {
           const blob = await res.blob();
-          el('length').textContent = `${blob.size} bytes`;
+          el('length').textContent = blob.size + ' bytes';
           const objUrl = URL.createObjectURL(blob);
           el('img').src = objUrl;
           el('imgWrap').style.display = 'block';
           el('body').textContent = '（画像レスポンス）';
+
+          const cd = res.headers.get('content-disposition') || '';
+          const m = /filename=\"?([^\";]+)\"?/i.exec(cd);
+          const name = m ? m[1] : (path.split('/').pop() || 'download');
+          const a = el('download');
+          a.href = objUrl;
+          a.download = name;
+          a.style.display = 'inline-block';
         } else if (ctype.includes('application/json')) {
           const data = await res.json();
-          const txt = toPretty(data, el('pretty').checked);
+          const txt = prettyJSON(data, el('pretty').checked);
           el('length').textContent = new Blob([txt]).size + ' bytes';
-          el('body').textContent = txt;
+          el('body').textContent = txt || '（空）';
         } else {
           const text = await res.text();
           el('length').textContent = new Blob([text]).size + ' bytes';
-          el('body').textContent = text;
+          el('body').textContent = text || '（空）';
         }
-      } catch (err) {
+      } catch (e) {
         el('status').textContent = 'Error';
-        el('body').textContent = String(err);
+        el('body').textContent = String(e);
       }
     }
 
+    // events
     el('fetchBtn').addEventListener('click', fetchApi);
-    el('showHello').addEventListener('click', () => { el('url').value = 'http://10.32.17.80:8100/hello'; fetchApi(); });
-    el('showCell').addEventListener('click', () => { el('url').value = 'http://10.32.17.80:8100/cell'; fetchApi(); });
+    el('btnHello').addEventListener('click', () => { el('path').value = '/hello'; fetchApi(); });
+    el('btnCell').addEventListener('click', () => { el('path').value = '/cell'; fetchApi(); });
+    el('showHeaders').addEventListener('change', e => toggleHeaders(e.target.checked));
 
-    window.addEventListener('DOMContentLoaded', () => fetchApi());
+    // 初回（/hello）
+    window.addEventListener('DOMContentLoaded', fetchApi);
   </script>
 </body>
 </html>
